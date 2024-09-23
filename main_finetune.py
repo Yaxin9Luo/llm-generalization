@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 from torchvision import datasets, transforms
 from transformers import GPT2Config
+from timm.models.vision_transformer import PatchEmbed, Block
 
 import torch
 import torch.backends.cudnn as cudnn
@@ -35,12 +36,10 @@ import util.misc as misc
 from util.datasets import build_dataset
 from util.pos_embed import interpolate_pos_embed
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
-import models_vit
 from transformers import GPT2Model
 from engine_finetune import train_one_epoch, evaluate
-from models_mae import MaskedAutoencoderViT
 import torch.nn as nn
-from model_llm import PatchEmbedGPTMAE
+from model_llm import MAE_GPT2_Classifier
 
 def get_args_parser():
     parser = argparse.ArgumentParser('MAE fine-tuning for image classification', add_help=False)
@@ -157,38 +156,6 @@ def get_args_parser():
 
     return parser
 
-
-
-
-class MAE_GPT2_Classifier(nn.Module):
-    def __init__(self, num_classes, seed=None):
-        super().__init__()
-        self.mae_gpt2 = PatchEmbedGPTMAE(
-            img_size=args.input_size,
-            patch_size=16,
-            embed_dim=1024,
-            gpt2_model_name='gpt2-medium',
-            seed=seed
-        )
-        # Freeze the parameters of mae_gpt2
-        # for param in self.mae_gpt2.parameters():
-        #     param.requires_grad = False
-        
-        # self.mae_gpt2.gpt2 = self.mae_gpt2.gpt2.from_pretrained("gpt2-medium") # loading pretrained gpt2 model
-        
-        ########## Initialize GPT-2 with random weights ##########
-        gpt2_config = GPT2Config.from_pretrained("gpt2-medium")
-        self.mae_gpt2.gpt2 = GPT2Model(config=gpt2_config)
-        # Add a new classifier layer
-        self.classifier = nn.Linear(self.mae_gpt2.gpt2_config.n_embd, num_classes)
-    def forward(self, x):
-        # Use the encoder part of PatchEmbedGPTMAE
-        latent, _, ids_restore = self.mae_gpt2.forward_encoder(x, mask_ratio=0)
-        # Use the decoder part (GPT-2)
-        gpt2_output = self.mae_gpt2.gpt2(inputs_embeds=latent).last_hidden_state
-        # Use the last hidden state for classification
-        logits = self.classifier(gpt2_output[:, -1, :])
-        return logits
 def print_trainable_parameters(model):
     trainable_params = 0
     all_param = 0
@@ -291,49 +258,8 @@ def main(args):
             mixup_alpha=args.mixup, cutmix_alpha=args.cutmix, cutmix_minmax=args.cutmix_minmax,
             prob=args.mixup_prob, switch_prob=args.mixup_switch_prob, mode=args.mixup_mode,
             label_smoothing=args.smoothing, num_classes=args.nb_classes)
-    
-    # model = models_vit.__dict__[args.model](
-    #     num_classes=args.nb_classes,
-    #     drop_path_rate=args.drop_path,
-    #     global_pool=args.global_pool,
-    # )
-
-    # if args.finetune and not args.eval:
-    #     checkpoint = torch.load(args.finetune, map_location='cpu')
-
-    #     print("Load pre-trained checkpoint from: %s" % args.finetune)
-    #     checkpoint_model = checkpoint['model']
-    #     state_dict = model.state_dict()
-    #     for k in ['head.weight', 'head.bias']:
-    #         if k in checkpoint_model and checkpoint_model[k].shape != state_dict[k].shape:
-    #             print(f"Removing key {k} from pretrained checkpoint")
-    #             del checkpoint_model[k]
-
-    #     # interpolate position embedding
-    #     interpolate_pos_embed(model, checkpoint_model)
-
-    #     # load pre-trained model
-    #     msg = model.load_state_dict(checkpoint_model, strict=False)
-    #     print(msg)
-
-    #     if args.global_pool:
-    #         assert set(msg.missing_keys) == {'head.weight', 'head.bias', 'fc_norm.weight', 'fc_norm.bias'}
-    #     else:
-    #         assert set(msg.missing_keys) == {'head.weight', 'head.bias'}
-
-    #     # manually initialize fc layer
-    #     trunc_normal_(model.head.weight, std=2e-5)
-    ########################## add llm  ##########################
-    # checkpoint = torch.load(args.finetune, map_location='cpu')
-    # mae_gpt2_model.load_state_dict(checkpoint['model'])
-    # if args.finetune:
-    #     checkpoint = torch.load(args.finetune, map_location='cpu')
-    #     print("Load pre-trained checkpoint from: %s" % args.finetune)
-    #     checkpoint_model = checkpoint['model']
-    #     mae_model.load_state_dict(checkpoint_model, strict=False)
-
     # Create the combined model
-    model = MAE_GPT2_Classifier(args.nb_classes)
+    model = MAE_GPT2_Classifier(args)
     # Compare some weights
     # print("Model 1 weights:")
     # print(model.mae_gpt2.gpt2.wte.weight[:5, :5])
@@ -349,8 +275,7 @@ def main(args):
     print("Model = %s" % str(model_without_ddp))
     print('number of params (M): %.2f' % (total_parameters / 1.e6))
     print('number of trainable params (M): %.2f' % (trainable_parameters / 1.e6))
-    # print_trainable_parameters(model)
-    # exit()
+
     eff_batch_size = args.batch_size * args.accum_iter * misc.get_world_size()
     
     if args.lr is None:  # only base_lr is specified
@@ -365,13 +290,6 @@ def main(args):
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
         model_without_ddp = model.module
-
-    ################# build optimizer with layer-wise lr decay (lrd)
-    # param_groups = lrd.param_groups_lrd(model_without_ddp, args.weight_decay,
-    #     no_weight_decay_list=model_without_ddp.no_weight_decay(),
-    #     layer_decay=args.layer_decay
-    # )
-    # optimizer = torch.optim.AdamW(param_groups, lr=args.lr)
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs) ##### Add scheduler
@@ -409,7 +327,7 @@ def main(args):
             args=args
         )
         scheduler.step() ##### Add scheduler
-        if args.output_dir:
+        if args.output_dir and (epoch + 1) % 20 == 0:
             misc.save_model(
                 args=args, model=model, model_without_ddp=model_without_ddp, optimizer=optimizer,
                 loss_scaler=loss_scaler, epoch=epoch)
