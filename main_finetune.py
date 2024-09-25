@@ -260,11 +260,11 @@ def main(args):
             label_smoothing=args.smoothing, num_classes=args.nb_classes)
     # Create the combined model
     model = MAE_GPT2_Classifier(args)
-    # Compare some weights
+    #########Compare some weights
     # print("Model 1 weights:")
-    # print(model.mae_gpt2.gpt2.wte.weight[:5, :5])
+    # print(model.gpt2.wte.weight[:5, :5])
     # print("Model 2 weights:")
-    # print(model2.mae_gpt2.gpt2.wte.weight[:5, :5])
+    # print(model2.gpt2.wte.weight[:5, :5])
     # exit()
     model.to(device)
 

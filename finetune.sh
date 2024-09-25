@@ -6,7 +6,7 @@ python main_finetune.py \
     --drop_path 0.1 \
     --clip_grad 1.0 \
     --weight_decay 0.05 \
-    --output_dir ./mbzuai_results/cifar10_pretrained_LLM_classifier_output_dir \
+    --output_dir ./mbzuai_results/cifar10_random_init_LLM_classifier_output_dir \
     --log_dir ./results/log_dir \
     --data_path /root/autodl-tmp/data/ \
     --nb_classes 10 \
