@@ -19,7 +19,7 @@ from pathlib import Path
 from torchvision import datasets, transforms
 from transformers import GPT2Config
 from timm.models.vision_transformer import PatchEmbed, Block
-
+import random
 import torch
 import torch.backends.cudnn as cudnn
 from torch.utils.tensorboard import SummaryWriter
@@ -172,7 +172,39 @@ def build_cifar_dataset(is_train, args):
     transform = build_cifar_transform(is_train, args)
     dataset = datasets.CIFAR10(root=args.data_path, train=is_train, transform=transform, download=True)
     return dataset
-
+def build_cifar_dataset_with_random_labels(is_train, args, random_label_ratio=1.0):
+    dataset = build_cifar_dataset(is_train, args)
+    if is_train:
+        num_classes = 10  # CIFAR-10 has 10 classes
+        num_samples = len(dataset)
+        num_random_samples = int(num_samples * random_label_ratio)
+        
+        random_indices = random.sample(range(num_samples), num_random_samples)
+        
+        print("\nRandomizing labels for training set:")
+        for i, idx in enumerate(random_indices):
+            original_label = dataset.targets[idx]
+            new_label = random.randint(0, num_classes - 1)
+            while new_label == original_label:
+                new_label = random.randint(0, num_classes - 1)
+            dataset.targets[idx] = new_label
+            
+            if i < 10:  # Print first 10 changes for verification
+                print(f"Sample {idx}: Original label: {original_label}, New label: {new_label}")
+            elif i == 10:
+                print("...")
+        
+        print(f"\nRandomized {num_random_samples} labels out of {num_samples} in the training set.")
+        
+        # Verify the overall distribution of labels
+        label_counts = {i: 0 for i in range(num_classes)}
+        for label in dataset.targets:
+            label_counts[label] += 1
+        print("\nLabel distribution after randomization:")
+        for label, count in label_counts.items():
+            print(f"Label {label}: {count} samples")
+    
+    return dataset
 def build_cifar_transform(is_train, args):
     if is_train:
         transform = transforms.Compose([
@@ -206,7 +238,7 @@ def main(args):
 
     # dataset_train = build_dataset(is_train=True, args=args)
     # dataset_val = build_dataset(is_train=False, args=args)
-    dataset_train = build_cifar_dataset(is_train=True, args=args)
+    dataset_train = build_cifar_dataset_with_random_labels(is_train=True, args=args)
     dataset_val = build_cifar_dataset(is_train=False, args=args)
     if True:  # args.distributed:
         num_tasks = misc.get_world_size()
@@ -261,6 +293,7 @@ def main(args):
     # Create the combined model
     model = MAE_GPT2_Classifier(args)
     #########Compare some weights
+    # model2 = MAE_GPT2_Classifier(args)
     # print("Model 1 weights:")
     # print(model.gpt2.wte.weight[:5, :5])
     # print("Model 2 weights:")

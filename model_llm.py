@@ -11,10 +11,7 @@ from timm.models.vision_transformer import PatchEmbed, Block
 class MAE_GPT2_Classifier(nn.Module):
     def __init__(self, args):
         super().__init__()
-        # Freeze the parameters of mae_gpt2
-        # for param in self.mae_gpt2.parameters():
-        #     param.requires_grad = False
-        
+        torch.manual_seed(999999)
         self.gpt2_config = GPT2Config.from_pretrained("gpt2-medium")
         # self.gpt2 = GPT2Model.from_pretrained("gpt2-medium", config=self.gpt2_config)
         self.patch_embed = PatchEmbed(img_size=args.input_size, patch_size=16, in_chans=3, embed_dim=1024)
@@ -25,8 +22,6 @@ class MAE_GPT2_Classifier(nn.Module):
         self.classifier = nn.Linear(self.gpt2_config.n_embd, args.nb_classes)
         self.initialize_weights()
     def initialize_weights(self):
-        # if seed is not None:
-        #     torch.manual_seed(seed)
         
         # Initialize patch_embed weights
         w = self.patch_embed.proj.weight.data
