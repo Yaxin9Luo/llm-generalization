@@ -11,3 +11,5 @@ tqdm==4.66.5
 transformers==4.44.2
 triton==3.0.0
 yarl==1.11.1
+torch==2.4.1
+torchvision==0.19.1
