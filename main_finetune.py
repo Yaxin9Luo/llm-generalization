@@ -291,7 +291,7 @@ def main(args):
             prob=args.mixup_prob, switch_prob=args.mixup_switch_prob, mode=args.mixup_mode,
             label_smoothing=args.smoothing, num_classes=args.nb_classes)
     # Create the combined model
-    model = MAE_GPT2_Classifier(args)
+    model = MAE_GPT2_Classifier(args, pretrained=True)
     #########Compare some weights
     # model2 = MAE_GPT2_Classifier(args)
     # print("Model 1 weights:")

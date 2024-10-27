@@ -5,7 +5,12 @@
 
 # Ignore markdown files
 *.md
-
+*.png
+*.pdf
+*.csv
+*.jpg
+*.jpeg
+*.webp
 # Ignore common Python files
 __pycache__/
 *.py[cod]
